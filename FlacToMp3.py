@@ -130,13 +130,13 @@ def synchronize(convert_list, delete_list):
     else:
         logging.info(f"No files to convert")
 
-    if NO_DELETE:
+    if DELETE:
         if len(delete_list):
             logging.info("Start file deletion")
             deleter(delete_list)
             logging.info("Ended file deletion")
         else:
-            logging.info(f"No files to Delete")
+            logging.info(f"No files to delete")
 
 
 def deleter(list_):
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     SRC = args.SRC
     DEST = args.DEST
     POS_CHECKER_RE = re.compile(rf"(?>{SRC}|{DEST})/?(.+?/\d{{2}})\s-")
-    NO_DELETE = args.no_delete
+    DELETE = not args.no_delete
     DRY = args.dry_run
 
     main()

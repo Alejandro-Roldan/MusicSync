@@ -17,16 +17,14 @@ sys.path.append(
 import scandirrecursive
 
 
-# FLAC_PATH = "/home/leptope/Music"
-FLAC_PATH = "/home/Saturn/music_test/flac"
-# MP3_PATH = "/home/Mars/Music"
-MP3_PATH = "/home/Saturn/music_test/mp3"
-POS_CHECKER_RE = re.compile(rf"(?>{FLAC_PATH}|{MP3_PATH})/?(.+?/\d{{2}})\s-")
-DISC_CHECKER_RE = re.compile(rf"({FLAC_PATH}.+/)(?>Disc\s\d+.*)")
+SRC = "/home/leptope/Music"
+DEST = "/home/Mars/Music"
+POS_CHECKER_RE = re.compile(rf"(?>{SRC}|{DEST})/?(.+?/\d{{2}})\s-")
+DELETE = True
 
 
 def jupiter_to_mars_path(path):
-    path = path.replace(FLAC_PATH, MP3_PATH)
+    path = path.replace(SRC, DEST)
 
     if path.endswith(".flac"):
         return path.replace(".flac", ".mp3")
@@ -36,48 +34,49 @@ def jupiter_to_mars_path(path):
 
 
 def compare_lists(list1, list2):
+    """Compares list1 to list2"""
     # This potentially can be done in multiproccess if the looping through
     # flac files didnt remove files and access was done as a binary tree
     convert_list = []
     delete_list = []
     # In case some of the lists has no items
-    i = -1
-    j = -1
-    # Loop through mp3 file list and
+    i = j = -1
+
+    # Loop through list2 file list
     for i, file2 in enumerate(list2):
         for j, file1 in enumerate(list1):
-            # Check if file exists in flac list both as flac or mp3
+            # Check if file exists in list1
             if file2.path == jupiter_to_mars_path(file1.path):
                 if file2.stat().st_mtime < file1.stat().st_mtime:
                     convert_list.append(file1.path)
 
-                # Continue with next mp3 file
+                # Continue with next file2
                 break
 
             else:
                 # Check if alphabetical position has been surpassed to stop looping
                 if file2.path == alph_pos_checker(file2.path, file1.path):
                     delete_list.append(file2.path)
-                    # To prevent removing the next item
-                    j -= 1
+                    j -= 1  # to prevent removing the next item
+                    # Continue with next file2
                     break
 
                 convert_list.append(file1.path)
 
-        # Remove from flac list to not reiterate over them
+        # Remove from list1 to not reiterate over them
         del list1[0 : j + 1]
-        # When flac files run out before mp3 files means we would have to
-        # delete the remaining of mp3 files
+        # When list1 runs out before list2 means we would have to
+        # delete the remaining of list2 files, so:
+        # Break out of the list2 loop
         if len(list1) == 0:
             break
-    # Remove mp3 files from list because if there are were to still be any
-    # file it should be removed to
+    # And remove the list2 files that weve been over already
     del list2[0 : i + 1]
 
-    # When finished mp3 files loop:
-    # add the rest of flac files to the convert list
+    # When finished list2 loop:
+    # add the rest of list1 files to the convert list
     convert_list = convert_list + [file1.path for file1 in list1]
-    # add the rest of mp3 files to the remove list
+    # add the rest of list2 files to the remove list
     delete_list = delete_list + [file2.path for file2 in list2]
     logging.info("Ended convert list and delete list creation")
 
@@ -131,19 +130,20 @@ def synchronize(convert_list, delete_list):
     else:
         logging.info(f"No files to convert")
 
-    if len(delete_list):
-        logging.info("Start file deletion")
-        deleter(delete_list)
-        logging.info("Ended file deletion")
-    else:
-        logging.info(f"No files to Delete")
+    if NO_DELETE:
+        if len(delete_list):
+            logging.info("Start file deletion")
+            deleter(delete_list)
+            logging.info("Ended file deletion")
+        else:
+            logging.info(f"No files to Delete")
 
 
 def deleter(list_):
     for item in list_:
         # Security check to not delete items that arent in the destination
         # directories
-        if MP3_PATH in item:
+        if DEST in item:
             try:
                 # Remove the file
                 logging.info(f'Deleting "{item}"')
@@ -222,7 +222,6 @@ def get_img_file(flac_path):
     search_path = os.path.dirname(flac_path)
     # Specific to how I order my music
     if "/Disc " in search_path:
-        # search_path = DISC_CHECKER_RE.match(search_path)[1]
         search_path = os.path.dirname(search_path)
 
     img_files = scandirrecursive.scandir_recursive_sorted(
@@ -234,7 +233,6 @@ def get_img_file(flac_path):
         depth=-1,
         max_find_items=1,
     )
-    # print(img_files)
     return img_files[0] if img_files else None
 
 
@@ -253,7 +251,7 @@ def main(info_level=logging.INFO):
     )
 
     flac_files = scandirrecursive.scandir_recursive_sorted(
-        FLAC_PATH,
+        SRC,
         ext_tuple=("flac", "mp3"),
         folders=False,
         files=True,
@@ -263,7 +261,7 @@ def main(info_level=logging.INFO):
     logging.info("Ended flac_files list creation")
 
     mp3_files = scandirrecursive.scandir_recursive_sorted(
-        MP3_PATH,
+        DEST,
         ext_tuple=("mp3",),
         folders=False,
         files=True,
@@ -280,5 +278,32 @@ def main(info_level=logging.INFO):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    # Call the argument parse object
+    parser = argparse.ArgumentParser()
+    parser.add_argument("SRC", type=str)
+    parser.add_argument("DEST", type=str)
+    parser.add_argument(
+        "--no-delete",
+        help="Don't delete files",
+        action="store_true",
+    )
+    parser.add_argument("-v", "--verbose_level", type=str, default="INFO")
+    parser.add_argument(
+        "-n",
+        "--dry-run",
+        help="Perform a trial run with no changes made",
+        action="store_true",
+    )
+
+    args = parser.parse_args()
+
+    SRC = args.SRC
+    DEST = args.DEST
+    POS_CHECKER_RE = re.compile(rf"(?>{SRC}|{DEST})/?(.+?/\d{{2}})\s-")
+    NO_DELETE = args.no_delete
+    DRY = args.dry_run
+
     main()
     print("end")

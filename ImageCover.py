@@ -5,14 +5,7 @@ from mutagen.flac import FLAC
 # Change import name for code clarity
 from mutagen.flac import Picture as FlacPicture
 
-# from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC
-
-# from mutagen.mp3 import MP3
-
-# from io import BytesIO
-# import PIL
-# import PIL.ImageTk
 
 
 IMG_EXTS = ("jpg", "jpeg", "png")
@@ -39,8 +32,6 @@ def change_img(item, img_path):
 
             meta_audio = ID3(item)
             applyImgChangesMP3(meta_audio, img)
-
-        # print('Added "{}" to "{}"'.format(img_path, item))
 
 
 def flacPicture(*args, **kwargs):

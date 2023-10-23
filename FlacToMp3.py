@@ -129,16 +129,11 @@ def synchronize(convert_list, delete_list):
                 else:
                     logging.error(result_msg)
         logging.info("Ended conversion proccess")
-    else:
-        logging.info(f"No files to convert")
 
-    if DELETE:
-        if len(delete_list):
-            logging.info("Start file deletion")
-            deleter(delete_list)
-            logging.info("Ended file deletion")
-        else:
-            logging.info(f"No files to delete")
+    if DELETE and len(delete_list):
+        logging.info("Start file deletion")
+        deleter(delete_list)
+        logging.info("Ended file deletion")
 
 
 def deleter(list_):

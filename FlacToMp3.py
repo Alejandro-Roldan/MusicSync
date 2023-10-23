@@ -79,6 +79,8 @@ def compare_lists(list1, list2):
     # add the rest of list2 files to the remove list
     delete_list = delete_list + [file2.path for file2 in list2]
     logging.info("Ended convert list and delete list creation")
+    logging.info(f"{len(convert_list)} files to convert")
+    logging.info(f"{len(delete_list)} files to delete")
 
     return convert_list, delete_list
 

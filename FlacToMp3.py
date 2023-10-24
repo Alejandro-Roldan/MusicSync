@@ -19,8 +19,9 @@ import scandirrecursive
 
 SRC = "/home/leptope/Music"
 DEST = "/home/Mars/Music"
-POS_CHECKER_RE = re.compile(rf"(?>{SRC}|{DEST})/?(.+?/\d{{2}})\s-")
-DELETE = True
+DELETE_BEFORE = 0
+DELETE_AFTER = 2
+NO_DELETE = 1
 LOG_LEVEL = ""
 CORES = None
 
@@ -107,6 +108,11 @@ def progress_gen(i, len_):
 
 
 def synchronize(convert_list, copy_list, delete_list):
+    if delete_list and DELETE == 1:
+        logging.info("Start file deletion")
+        deleter(delete_list)
+        logging.info("Ended file deletion")
+
     if convert_list:
         logging.info("Start conversion proccess")
         converter(convert_list)
@@ -117,7 +123,7 @@ def synchronize(convert_list, copy_list, delete_list):
         copier(copy_list)
         logging.info("Ended file copy")
 
-    if DELETE and delete_list:
+    if delete_list and DELETE == 2:
         logging.info("Start file deletion")
         deleter(delete_list)
         logging.info("Ended file deletion")
@@ -308,6 +314,16 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--delete-after",
+        help="Delete files after Copy/Convert",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--delete-before",
+        help="Delete files before Copy/Convert",
+        action="store_true",
+    )
+    parser.add_argument(
         "-c",
         "--cores",
         help="Number of cores to use. Default: max available",
@@ -332,8 +348,13 @@ if __name__ == "__main__":
 
     SRC = args.SRC
     DEST = args.DEST
-    POS_CHECKER_RE = re.compile(rf"(?>{SRC}|{DEST})/?(.+?/\d{{2}})\s-")
-    DELETE = not args.no_delete
+
+    DELETE_BEFORE = 1 if args.delete_before else 0
+    DELETE_AFTER = 2 if args.delete_after else 0
+    NO_DELETE = 0 if args.no_delete else 1
+    # DELETE state will be 0 when no delete, 1 when delete before and 2 after
+    DELETE = NO_DELETE * (DELETE_BEFORE + DELETE_AFTER)
+
     DRY = args.dry_run
     CORES = args.cores
 

@@ -1,44 +1,21 @@
-#!/bin/python
+#!/usr/bin/env python3
 
 import os
 import sys
 import shutil
 import subprocess
-import re
 from concurrent.futures import ProcessPoolExecutor
 import logging
 
-import ImageCover
+from . import ImageCover
 
 
-sys.path.append(
-    "/home/leptope/Programs/Python/ScandirRecursive/ScandirRecursiveV03.00"
-)
-import scandirrecursive
+from scandirRecursive.scandirrecursive import scandir_recursive
 
 
-SRC = "/home/leptope/Music"
-DEST = "/home/Mars/Music"
-DELETE_BEFORE = 0
-DELETE_AFTER = 2
-NO_DELETE = 1
-LOG_LEVEL = ""
-CORES = None
-
-
-def src_to_dest_path(path):
-    path = path.replace(SRC, DEST)
-
-    if path.endswith(".flac"):
-        return path.replace(".flac", ".mp3")
-    elif path.endswith(".mp3"):
-        # Specific to how I order my music
-        return path.replace(" [mp3]", "")
-
-
-def compare_lists(src_list, dest_list):
+def diff_dirs(src_iterator, dest_iterator):
     """
-    Compares src_list to dest_list and extracts the needed actions for
+    Compares src_iterator to dest_iterator and extracts the needed actions for
     every file.
     * Convert/Copy if file only exists in SRC or SRC is newer than DEST
     * Delete if file only exists in DEST
@@ -49,84 +26,65 @@ def compare_lists(src_list, dest_list):
     * delete_list
     """
 
+    def convert_or_copy(item):
+        if item.endswith(".mp3"):
+            copy_list.append(item)
+        else:
+            convert_list.append(item)
+
     convert_list = []
     copy_list = []
-    delete_list = []
 
-    # Generate a dict that has the DEST paths as keys and SRC paths as values
-    # from the SRC list
-    dict1 = {
-        src_to_dest_path(src_file.path): src_file.path for src_file in src_list
-    }
-    # Generate a dict that has the DEST existing paths as keys and EMPTY as
-    # values. From DEST list
-    dict2 = {dest_file.path: None for dest_file in dest_list}
+    # Have DEST files paths in a set() type
+    # (sets have very quick access by value)
+    dest_set = {dest_file.path for dest_file in dest_iterator}
+    # Loop through SRC files
+    for src_file in src_iterator:
+        src_dest_path = src_to_dest_path(src_file.path)
 
-    # Join both dicts
-    # For the keys that exist in both: keep the values from dict1 (SRC paths)
-    joint_dict = dict2 | dict1
-    # Sort it (could be skipped since progress is kept through numbers)
-    joint_dict = dict(
-        sorted(joint_dict.items(), key=lambda entry: entry[0].casefold())
-    )
+        # When SRC file exists in DEST files
+        if src_dest_path in dest_set:
+            # Remove from DEST set
+            dest_set.remove(src_dest_path)
 
-    # Process joint_dict
-    for file in joint_dict:
-        # When value is EMPTY (file only exists in DEST): delete it
-        if not joint_dict[file]:
-            delete_list.append(file)
+            # And if SRC is newer: convert/copy
+            if int(os.stat(src_dest_path).st_mtime) < int(
+                os.stat(src_file.path).st_mtime
+            ):
+                convert_or_copy(src_file.path)
+
+        # When SRC file doesnt exist in DEST: convert/copy
         else:
-            # Check which is newer
-            try:
-                # When SRC is newer
-                if int(os.stat(file).st_mtime) < int(
-                    os.stat(joint_dict[file]).st_mtime
-                ):
-                    if joint_dict[file].endswith(".mp3"):
-                        copy_list.append(joint_dict[file])
-                    else:
-                        convert_list.append(joint_dict[file])
+            convert_or_copy(src_file.path)
 
-            # Handle when file only exists in SRC
-            except FileNotFoundError:
-                if joint_dict[file].endswith(".mp3"):
-                    copy_list.append(joint_dict[file])
-                else:
-                    convert_list.append(joint_dict[file])
+    # The files that are left in DEST set are the ones to delete
 
-    logging.info("Ended convert list and delete list creation")
-    logging.info(f"{len(convert_list)} files to convert")
-    logging.info(f"{len(copy_list)} files to copy")
-    logging.info(f"{len(delete_list)} files to delete")
+    # Sort lists not needed, progress is kept through numbers; but it doesnt
+    # slow execution at all
+    convert_list.sort(key=str.casefold)
+    copy_list.sort(key=str.casefold)
+    delete_list = sorted(dest_set, key=str.casefold)
 
     return convert_list, copy_list, delete_list
 
 
+def src_to_dest_path(path):
+    """Converts SRC path str to DEST path str"""
+    path = path.replace(SRC, DEST)
+
+    if path.endswith(".flac"):
+        return path.replace(".flac", ".mp3")
+    elif path.endswith(".mp3"):
+        # Specific to how I order my music
+        return path.replace(" [mp3]", "")
+
+
 def progress_gen(i, len_):
-    """Progress str generator"""
+    """Progress str generator
+
+    [current_item/total_items(%)]
+    """
     return f"[{i+1}/{len_}({(i+1)/len_:.0%})] "
-
-
-def synchronize(convert_list, copy_list, delete_list):
-    if delete_list and DELETE == 1:
-        logging.info("Start file deletion")
-        deleter(delete_list)
-        logging.info("Ended file deletion")
-
-    if convert_list:
-        logging.info("Start conversion proccess")
-        converter(convert_list)
-        logging.info("Ended conversion proccess")
-
-    if copy_list:
-        logging.info("Start file copy")
-        copier(copy_list)
-        logging.info("Ended file copy")
-
-    if delete_list and DELETE == 2:
-        logging.info("Start file deletion")
-        deleter(delete_list)
-        logging.info("Ended file deletion")
 
 
 def deleter(list_):
@@ -162,6 +120,7 @@ def copier(list_):
             # Copy file with metadata included
             shutil.copy2(item, out_item)
             logging.info(f"COP{progress} {item} -> {out_item}")
+
         except shutil.SameFileError:
             logging.error(
                 "Couldn't copy file: SRC and DEST files are the same"
@@ -170,20 +129,27 @@ def copier(list_):
             logging.error("Couldn't copy file: Permission Denied")
 
 
-def converter(list_):
+def converter(list_, cores):
+    """CPU heavy execution that can be done in multiproccessing"""
     convert_len = len(list_)
-    with ProcessPoolExecutor(max_workers=CORES) as executor:
-        for i, result in enumerate(executor.map(_convert, list_)):
-            progress = progress_gen(i, convert_len)
-            # Break into vars the func return
-            result_code, result_msg = result
-            if result_code == 0 or result_code == 127:
-                logging.info(f"CON{progress} {result_msg}")
-            else:
-                logging.error(result_msg)
+    # Multicore execution
+    # with ProcessPoolExecutor(max_workers=cores) as executor:
+    #     # Returns result status of each item seperate to handle printing and
+    #     # errors
+    #     for i, result in enumerate(executor.map(convert, list_)):
+    for i, item in enumerate(list_):
+        result = convert(item)
+        progress = progress_gen(i, convert_len)
+        # Break into vars the func return
+        result_code, result_msg = result
+        # Handle statuses for logging
+        if result_code == 0 or result_code == 127:
+            logging.info(f"CON{progress} {result_msg}")
+        else:
+            logging.error(result_msg)
 
 
-def _convert(item):
+def convert(item):
     result_msg = "No return status defined"
     result_code = 5
 
@@ -209,14 +175,14 @@ def _convert(item):
         text=True,
     )
     # Convert without image because of ffmpeg bug that sometimes makes the
-    # files occupy ~double if converted whit images
+    # files size ~double if converted whith images
 
     # Handle execution error
     if result.returncode != 0:
         result_msg = f'Couldn\'t convert "{item}" to "{out_item}"'
         result_code = 1
     else:
-        img = get_img_file(item)
+        img = _get_img_file(item)
         # Try to add image if theres one
         if img:
             ImageCover.change_img(out_item, img.path)
@@ -225,7 +191,7 @@ def _convert(item):
         else:
             result_msg = (
                 f"{item} -> {out_item}\n"
-                f'Couldn\'t add "{img.name}" to "{out_item}"'
+                f'Couldn\'t add image to "{out_item}"'
             )
             # Warning state when image fails
             result_code = 127
@@ -233,59 +199,80 @@ def _convert(item):
     return result_code, result_msg
 
 
-def get_img_file(flac_path):
+def _get_img_file(flac_path):
+    """Find image in item directory"""
+
     search_path = os.path.dirname(flac_path)
-    # Specific to how I order my music
+    # Or in the upper directory when... (specific to how I order my music)
     if "/Disc " in search_path:
         search_path = os.path.dirname(search_path)
 
-    img_files = scandirrecursive.scandir_recursive(
-        search_path,
-        ext_tuple=ImageCover.IMG_EXTS,
-        folders=False,
-        files=True,
-        hidden=False,
-        depth=-1,
-        max_find_items=1,
+    img_files = list(
+        scandir_recursive(
+            search_path,
+            ext_tuple=ImageCover.IMG_EXTS,
+            folders=False,
+            files=True,
+            hidden=False,
+            depth=-1,
+            max_find_items=1,
+        )
     )
     return img_files[0] if img_files else None
 
 
-def main(verbose_level=logging.INFO):
+def main(
+    src_path,
+    dest_path,
+    delete_state=2,
+    cores=None,
+    dry_run=False,
+    verbose_level=logging.INFO,
+):
     """
     If file exists in flac but not in mp3: convert
-    If file exists in both: compare mtime and
+    If file exists in both: compare last_modified_time and
         if flac is newer: convert
         if mp3 is newer or same: pass
     If file exists in mp3 but not in flac: delete
     """
+    global SRC, DEST
+    SRC = src_path
+    DEST = dest_path
+
     logging.basicConfig(
         format="[%(asctime)s][%(levelname)s] - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
         level=verbose_level,
     )
 
-    flac_files = scandirrecursive.scandir_recursive(
-        SRC,
+    src_files = scandir_recursive(
+        src_path,
         ext_tuple=("flac", "mp3"),
         folders=False,
         files=True,
         hidden=False,
         depth=-1,
     )
-    logging.info("Ended flac_files list creation")
 
-    mp3_files = scandirrecursive.scandir_recursive(
-        DEST,
+    dest_files = scandir_recursive(
+        dest_path,
         ext_tuple=("mp3",),
         folders=False,
         files=True,
         hidden=False,
         depth=-1,
     )
-    logging.info("Ended mp3_files list creation")
 
-    convert_list, copy_list, delete_list = compare_lists(flac_files, mp3_files)
+    logging.info(
+        f'Starting SRC ("{src_path}") and DEST ("{dest_path}") diff creation'
+    )
+    convert_list, copy_list, delete_list = diff_dirs(src_files, dest_files)
+    # Logging
+    logging.info(f"Ended directories diff creation")
+    logging.info(f"{len(convert_list)} files to convert")
+    logging.info(f"{len(copy_list)} files to copy")
+    logging.info(f"{len(delete_list)} files to delete")
     logging.debug(f"Convert List:\n{convert_list}")
     logging.debug(f"Copy List:\n{copy_list}")
     logging.debug(f"Delete List:\n{delete_list}")
@@ -297,11 +284,31 @@ def main(verbose_level=logging.INFO):
         with open("delete_list.log", "w") as f:
             f.write("\n".join(delete_list))
 
-    if not DRY:
-        synchronize(convert_list, copy_list, delete_list)
+    if not dry_run:
+        # Delete if delete-before
+        if delete_list and delete_state == 1:
+            logging.info("Start file deletion")
+            deleter(delete_list)
+            logging.info("Ended file deletion")
+
+        if convert_list:
+            logging.info("Start conversion proccess")
+            converter(convert_list, cores)
+            logging.info("Ended conversion proccess")
+
+        if copy_list:
+            logging.info("Start file copy")
+            copier(copy_list)
+            logging.info("Ended file copy")
+
+        # Delete if delete-after
+        if delete_list and delete_state == 2:
+            logging.info("Start file deletion")
+            deleter(delete_list)
+            logging.info("Ended file deletion")
 
 
-if __name__ == "__main__":
+def _cli_run():
     import argparse
 
     # Call the argument parse object
@@ -311,11 +318,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-delete",
         help="Don't delete files",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--delete-after",
-        help="Delete files after Copy/Convert",
         action="store_true",
     )
     parser.add_argument(
@@ -346,21 +348,24 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    SRC = args.SRC
-    DEST = args.DEST
-
-    DELETE_BEFORE = 1 if args.delete_before else 0
-    DELETE_AFTER = 2 if args.delete_after else 0
-    NO_DELETE = 0 if args.no_delete else 1
-    # DELETE state will be 0 when no delete, 1 when delete before and 2 after
-    DELETE = NO_DELETE * (DELETE_BEFORE + DELETE_AFTER)
-
-    DRY = args.dry_run
-    CORES = args.cores
+    delete_before = 1 if args.delete_before else 2
+    no_delete = 0 if args.no_delete else 1
+    # DELETE state will be 0 when no delete, 1 when before and 2 after
+    delete_state = no_delete * delete_before
 
     verbose_level = getattr(logging, args.verbose_level.upper(), None)
     if not isinstance(verbose_level, int):
         raise ValueError("Invalid verbose level: %s" % loglevel)
 
-    main(verbose_level)
-    print("end")
+    main(
+        args.SRC,
+        args.DEST,
+        delete_state=delete_state,
+        cores=args.cores,
+        dry_run=args.dry_run,
+        verbose_level=verbose_level,
+    )
+
+
+if __name__ == "__main__":
+    _cli_run()

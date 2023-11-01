@@ -1,5 +1,5 @@
-# FlacToMp3
-A python script to synchronize-convert flac files to mp3 from A to B.
+# MusicSync
+A python script to synchronize + convert flac files to mp3 from A to B.
 
 ### Works
 Converts new files in A.

@@ -1,4 +1,4 @@
-import FlacToMp3
+import musicsync
 
 # Information
 __license__ = "GPL3"

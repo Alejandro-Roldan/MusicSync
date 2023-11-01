@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 
+import logging
 import os
-import sys
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ProcessPoolExecutor
-import logging
 
-from . import ImageCover
+from scandirrecursive.scandirrecursive import scandir_recursive
 
-
-from scandirRecursive.scandirrecursive import scandir_recursive
+from . import imagecover
 
 
 def diff_dirs(src_iterator, dest_iterator):
@@ -94,13 +93,16 @@ def deleter(list_):
         # directories
         if DEST in item:
             try:
-                progress = progress_gen(i, list_len)
-                # Remove the file
-                logging.info(f"DEL{progress} {item}")
                 os.remove(item)
                 # Try to remove the empty directories that might been left by
                 # the file removal
                 os.removedirs(os.path.dirname(item))
+
+                # Logging
+                progress = progress_gen(i, list_len)
+                # Remove the file
+                logging.info(f"DEL{progress} {item}")
+
             # Handle FileNotFoundError from file removal and OSError from
             # directory not empty
             except (FileNotFoundError, OSError):
@@ -116,9 +118,11 @@ def copier(list_):
         os.makedirs(os.path.dirname(out_item), exist_ok=True)
 
         try:
-            progress = progress_gen(i, list_len)
             # Copy file with metadata included
             shutil.copy2(item, out_item)
+
+            # Logging
+            progress = progress_gen(i, list_len)
             logging.info(f"COP{progress} {item} -> {out_item}")
 
         except shutil.SameFileError:
@@ -133,20 +137,19 @@ def converter(list_, cores):
     """CPU heavy execution that can be done in multiproccessing"""
     convert_len = len(list_)
     # Multicore execution
-    # with ProcessPoolExecutor(max_workers=cores) as executor:
-    #     # Returns result status of each item seperate to handle printing and
-    #     # errors
-    #     for i, result in enumerate(executor.map(convert, list_)):
-    for i, item in enumerate(list_):
-        result = convert(item)
-        progress = progress_gen(i, convert_len)
-        # Break into vars the func return
-        result_code, result_msg = result
-        # Handle statuses for logging
-        if result_code == 0 or result_code == 127:
-            logging.info(f"CON{progress} {result_msg}")
-        else:
-            logging.error(result_msg)
+    with ProcessPoolExecutor(max_workers=cores) as executor:
+        # Returns result status of each item seperate to handle printing and
+        # errors
+        for i, result in enumerate(executor.map(convert, list_)):
+            # Logging
+            progress = progress_gen(i, convert_len)
+            # Break into vars the func return
+            result_code, result_msg = result
+            # Handle statuses for logging
+            if result_code == 0 or result_code == 127:
+                logging.info(f"CON{progress} {result_msg}")
+            else:
+                logging.error(result_msg)
 
 
 def convert(item):
@@ -185,7 +188,7 @@ def convert(item):
         img = _get_img_file(item)
         # Try to add image if theres one
         if img:
-            ImageCover.change_img(out_item, img.path)
+            imagecover.change_img(out_item, img.path)
             result_msg = f'{item} -> {out_item} with image "{img.name}"'
             result_code = 0
         else:
@@ -210,7 +213,7 @@ def _get_img_file(flac_path):
     img_files = list(
         scandir_recursive(
             search_path,
-            ext_tuple=ImageCover.IMG_EXTS,
+            ext_tuple=imagecover.IMG_EXTS,
             folders=False,
             files=True,
             hidden=False,
@@ -221,12 +224,12 @@ def _get_img_file(flac_path):
     return img_files[0] if img_files else None
 
 
-def main(
+def synchronize(
     src_path,
     dest_path,
     delete_state=2,
     cores=None,
-    dry_run=False,
+    auto_yes=False,
     verbose_level=logging.INFO,
 ):
     """
@@ -268,7 +271,7 @@ def main(
         f'Starting SRC ("{src_path}") and DEST ("{dest_path}") diff creation'
     )
     convert_list, copy_list, delete_list = diff_dirs(src_files, dest_files)
-    # Logging
+    # Logging diff results
     logging.info(f"Ended directories diff creation")
     logging.info(f"{len(convert_list)} files to convert")
     logging.info(f"{len(copy_list)} files to copy")
@@ -284,28 +287,45 @@ def main(
         with open("delete_list.log", "w") as f:
             f.write("\n".join(delete_list))
 
-    if not dry_run:
-        # Delete if delete-before
-        if delete_list and delete_state == 1:
-            logging.info("Start file deletion")
-            deleter(delete_list)
-            logging.info("Ended file deletion")
+    # Exit when nothing to do
+    if not convert_list and not copy_list and not delete_list:
+        sys.exit()
 
-        if convert_list:
-            logging.info("Start conversion proccess")
-            converter(convert_list, cores)
-            logging.info("Ended conversion proccess")
+    # Procced execution check
+    answer = "y" if auto_yes else "n"
+    # Repeat if invalid answers
+    while answer != "y":
+        answer = input("Procced? [Y/n]: ").lower()
+        # empty answer = yes
+        answer = "y" if answer == "" else answer
+        if answer == "n":
+            # Abort and exit
+            logging.info("Aborting synchronization")
+            sys.exit()
+        elif answer != "y":
+            print("Not a valid answer. Try again")
 
-        if copy_list:
-            logging.info("Start file copy")
-            copier(copy_list)
-            logging.info("Ended file copy")
+    # Delete-before
+    if delete_list and delete_state == 1:
+        logging.info("Start file deletion")
+        deleter(delete_list)
+        logging.info("Ended file deletion")
 
-        # Delete if delete-after
-        if delete_list and delete_state == 2:
-            logging.info("Start file deletion")
-            deleter(delete_list)
-            logging.info("Ended file deletion")
+    if convert_list:
+        logging.info("Start conversion proccess")
+        converter(convert_list, cores)
+        logging.info("Ended conversion proccess")
+
+    if copy_list:
+        logging.info("Start file copy")
+        copier(copy_list)
+        logging.info("Ended file copy")
+
+    # Delete-after
+    if delete_list and delete_state == 2:
+        logging.info("Start file deletion")
+        deleter(delete_list)
+        logging.info("Ended file deletion")
 
 
 def _cli_run():
@@ -313,18 +333,6 @@ def _cli_run():
 
     # Call the argument parse object
     parser = argparse.ArgumentParser()
-    parser.add_argument("SRC", type=str)
-    parser.add_argument("DEST", type=str)
-    parser.add_argument(
-        "--no-delete",
-        help="Don't delete files",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--delete-before",
-        help="Delete files before Copy/Convert",
-        action="store_true",
-    )
     parser.add_argument(
         "-c",
         "--cores",
@@ -340,11 +348,25 @@ def _cli_run():
         default="INFO",
     )
     parser.add_argument(
-        "-n",
-        "--dry-run",
-        help="Perform a trial run with no changes made",
+        "-y",
+        "--auto-yes",
+        help=(
+            "Don't ask for confirmation before procceding with synchronization"
+        ),
         action="store_true",
     )
+    parser.add_argument(
+        "--no-delete",
+        help="Don't delete files",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--delete-before",
+        help="Delete files before Copy/Convert",
+        action="store_true",
+    )
+    parser.add_argument("SRC", type=str)
+    parser.add_argument("DEST", type=str)
 
     args = parser.parse_args()
 
@@ -357,12 +379,12 @@ def _cli_run():
     if not isinstance(verbose_level, int):
         raise ValueError("Invalid verbose level: %s" % loglevel)
 
-    main(
+    synchronize(
         args.SRC,
         args.DEST,
         delete_state=delete_state,
         cores=args.cores,
-        dry_run=args.dry_run,
+        auto_yes=args.auto_yes,
         verbose_level=verbose_level,
     )
 

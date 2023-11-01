@@ -1,12 +1,10 @@
+#!/usr/bin/env python3
+
 import os
 
 from mutagen.flac import FLAC
-
-# Change import name for code clarity
 from mutagen.flac import Picture as FlacPicture
-
-from mutagen.id3 import ID3, APIC
-
+from mutagen.id3 import APIC, ID3
 
 IMG_EXTS = ("jpg", "jpeg", "png")
 
@@ -21,20 +19,20 @@ def change_img(item, img_path):
         # Load the item metadata and set the new picture.
         if item.endswith("flac"):
             # Load the new image
-            img = flacPicture(img_path)
+            img = gen_flac_picture(img_path)
 
             meta_audio = FLAC(item)
-            applyImgChangesFLAC(meta_audio, img)
+            apply_img_changes_flac(meta_audio, img)
 
         elif item.endswith("mp3"):
             # Load the new image
-            img = mp3Picture(img_path)
+            img = gen_mp3_picture(img_path)
 
             meta_audio = ID3(item)
-            applyImgChangesMP3(meta_audio, img)
+            apply_img_changes_mp3(meta_audio, img)
 
 
-def flacPicture(*args, **kwargs):
+def gen_flac_picture(*args, **kwargs):
     """
     Creates a mutagen.flac.Picture object, sets its mimetype, its
     type and its description. Then loads the selected img and returns
@@ -62,7 +60,7 @@ def flacPicture(*args, **kwargs):
     return img
 
 
-def mp3Picture(img_path, *args, **kwargs):
+def gen_mp3_picture(img_path, *args, **kwargs):
     """
     Creates a mutagen APIC object, sets its mimetype, its
     type and its description. Then loads the selected img and returns
@@ -85,7 +83,7 @@ def mp3Picture(img_path, *args, **kwargs):
     return apic
 
 
-def applyImgChangesFLAC(meta_audio, img=None, *args, **kwargs):
+def apply_img_changes_flac(meta_audio, img=None, *args, **kwargs):
     """Changes the image of a flac audio file"""
     if img:
         meta_audio.clear_pictures()  # clear other images
@@ -93,7 +91,7 @@ def applyImgChangesFLAC(meta_audio, img=None, *args, **kwargs):
         meta_audio.save()
 
 
-def applyImgChangesMP3(meta_audio, apic=None, *args, **kwargs):
+def apply_img_changes_mp3(meta_audio, apic=None, *args, **kwargs):
     """Changes the image of a mp3 audio file"""
     if apic:
         for tag in meta_audio:
@@ -114,4 +112,4 @@ if __name__ == "__main__":
     if SONG_PATH and IMG_PATH:
         change_img(SONG_PATH, IMG_PATH)
     else:
-        print("No song and no img")
+        print("No song or no img")

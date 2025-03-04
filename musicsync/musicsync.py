@@ -7,9 +7,9 @@ import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
 
+import imagecover
+import metadata
 from scandirrecursive.scandirrecursive import scandir_recursive
-
-from . import imagecover
 
 
 def diff_dirs(src_iterator, dest_iterator):
@@ -126,9 +126,7 @@ def copier(list_):
             logging.info(f"COP{progress} {item} -> {out_item}")
 
         except shutil.SameFileError:
-            logging.error(
-                "Couldn't copy file: SRC and DEST files are the same"
-            )
+            logging.error("Couldn't copy file: SRC and DEST files are the same")
         except PermissionError:
             logging.error("Couldn't copy file: Permission Denied")
 
@@ -184,20 +182,26 @@ def convert(item):
     if result.returncode != 0:
         result_msg = f'Couldn\'t convert "{item}" to "{out_item}"'
         result_code = 1
+
+        return result_code, result_msg
+
+    result_msg = f"{item} -> {out_item}"
+    # Try to add image if theres one
+    img = _get_img_file(item)
+    if img:
+        imagecover.change_img(out_item, img.path)
+        result_msg += f' with image "{img.name}"'
+        result_code = 0
     else:
-        img = _get_img_file(item)
-        # Try to add image if theres one
-        if img:
-            imagecover.change_img(out_item, img.path)
-            result_msg = f'{item} -> {out_item} with image "{img.name}"'
-            result_code = 0
-        else:
-            result_msg = (
-                f"{item} -> {out_item}\n"
-                f'Couldn\'t add image to "{out_item}"'
-            )
-            # Warning state when image fails
-            result_code = 127
+        result_msg += f'\nCouldn\'t add image to "{out_item}"'
+        # Warning state when image fails
+        result_code = 127
+    # Re-add metadata on output so multi value items maintain the multiple items
+    # (ffmpeg joins them into a single one)
+    new_meta_succes = metadata.change_metadata(item, out_item)
+    if not new_meta_succes:
+        result_msg += f'\nCouldn\'t add metadata to "{out_item}"'
+        result_code += 1
 
     return result_code, result_msg
 
@@ -267,9 +271,7 @@ def synchronize(
         depth=-1,
     )
 
-    logging.info(
-        f'Starting SRC ("{src_path}") and DEST ("{dest_path}") diff creation'
-    )
+    logging.info(f'Starting SRC ("{src_path}") and DEST ("{dest_path}") diff creation')
     convert_list, copy_list, delete_list = diff_dirs(src_files, dest_files)
     # Logging diff results
     logging.info(f"Ended directories diff creation")
@@ -350,9 +352,7 @@ def _cli_run():
     parser.add_argument(
         "-y",
         "--auto-yes",
-        help=(
-            "Don't ask for confirmation before procceding with synchronization"
-        ),
+        help=("Don't ask for confirmation before procceding with synchronization"),
         action="store_true",
     )
     parser.add_argument(

@@ -1,0 +1,61 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MusicSync"
+version = "1.5.0"
+description = "A music directory backup syncer and flac to mp3 converter"
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {file = "LICENSE"}
+authors = [
+  {name = "Alejandro Roldán", email = "alej_roldan@disr.it"}
+]
+maintainers = [
+  {name = "Alejandro Roldán", email = "alej_roldan@disr.it"}
+]
+
+requires-python = ">=3.12"
+dependencies = [
+	"mutagen >= 1.47.0",
+	"scandirRecursive @ git+https://github.com/Alejandro-Roldan/scandirRecursive.git"
+]
+
+[project.optional-dependencies]
+lint = [
+	"black >= 24.8.0",
+	"isort >= 5.13.0",
+	"flake8 >= 7.1.0"
+]
+dev = [
+	"MusicSync[lint]"
+]
+
+[project.scripts]
+musicsync = "musicsync.musicsync:_cli_run"
+
+[tool.black]
+line-length = 88
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | \.env
+  | _build
+  | buck-out
+  | build
+  | dist
+  | blib2to3
+  | tests/data
+)/
+'''
+
+[tool.isort]
+profile = "black"
+skip_gitignore = true

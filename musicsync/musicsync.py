@@ -7,9 +7,9 @@ import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
 
-import imagecover
-import metadata
 from scandirrecursive.scandirrecursive import scandir_recursive
+
+from musicsync import imagecover, metadata
 
 
 def diff_dirs(src_iterator, dest_iterator):

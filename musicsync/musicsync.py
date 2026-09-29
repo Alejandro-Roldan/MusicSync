@@ -6,13 +6,14 @@ import shutil
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
+from itertools import repeat
 
 from scandirrecursive.scandirrecursive import scandir_recursive
 
 from musicsync import imagecover, metadata
 
 
-def diff_dirs(src_iterator, dest_iterator):
+def diff_dirs(src_iterator, dest_iterator, src_path, dest_path):
     """
     Compares src_iterator to dest_iterator and extracts the needed actions for
     every file.
@@ -39,7 +40,7 @@ def diff_dirs(src_iterator, dest_iterator):
     dest_set = {dest_file.path for dest_file in dest_iterator}
     # Loop through SRC files
     for src_file in src_iterator:
-        src_dest_path = src_to_dest_path(src_file.path)
+        src_dest_path = src_to_dest_path(src_file.path, src_path, dest_path)
 
         # When SRC file exists in DEST files
         if src_dest_path in dest_set:
@@ -67,9 +68,12 @@ def diff_dirs(src_iterator, dest_iterator):
     return convert_list, copy_list, delete_list
 
 
-def src_to_dest_path(path):
+def src_to_dest_path(path, src_path, dest_path):
     """Converts SRC path str to DEST path str"""
-    path = path.replace(SRC, DEST)
+    # breakpoint()
+    # path = path.replace(SRC, DEST)
+    # path = path.replace(globals()["SRC"], globals()["DEST"])
+    path = path.replace(src_path, dest_path)
 
     if path.endswith(".flac"):
         return path.replace(".flac", ".mp3")
@@ -109,10 +113,10 @@ def deleter(list_):
                 pass
 
 
-def copier(list_):
+def copier(list_, src_path, dest_path):
     list_len = len(list_)
     for i, item in enumerate(list_):
-        out_item = src_to_dest_path(item)
+        out_item = src_to_dest_path(item, src_path, dest_path)
 
         # Create directory hirearchy if it doesnt exists
         os.makedirs(os.path.dirname(out_item), exist_ok=True)
@@ -131,14 +135,16 @@ def copier(list_):
             logging.error("Couldn't copy file: Permission Denied")
 
 
-def converter(list_, cores):
+def converter(list_, cores, src_path, dest_path):
     """CPU heavy execution that can be done in multiproccessing"""
     convert_len = len(list_)
     # Multicore execution
     with ProcessPoolExecutor(max_workers=cores) as executor:
         # Returns result status of each item seperate to handle printing and
-        # errors
-        for i, result in enumerate(executor.map(convert, list_)):
+        # errors. Use repeat() to pass the fixed value
+        for i, result in enumerate(
+            executor.map(convert, list_, repeat(src_path), repeat(dest_path))
+        ):
             # Logging
             progress = progress_gen(i, convert_len)
             # Break into vars the func return
@@ -150,11 +156,11 @@ def converter(list_, cores):
                 logging.error(result_msg)
 
 
-def convert(item):
+def convert(item, src_path, dest_path):
     result_msg = "No return status defined"
     result_code = 5
 
-    out_item = src_to_dest_path(item)
+    out_item = src_to_dest_path(item, src_path, dest_path)
 
     # Create directory hirearchy if it doesnt exists
     os.makedirs(os.path.dirname(out_item), exist_ok=True)
@@ -243,9 +249,9 @@ def synchronize(
         if mp3 is newer or same: pass
     If file exists in mp3 but not in flac: delete
     """
-    global SRC, DEST
-    SRC = src_path
-    DEST = dest_path
+    # global SRC, DEST
+    # SRC = src_path
+    # DEST = dest_path
 
     logging.basicConfig(
         format="[%(asctime)s][%(levelname)s] - %(message)s",
@@ -272,7 +278,9 @@ def synchronize(
     )
 
     logging.info(f'Starting SRC ("{src_path}") and DEST ("{dest_path}") diff creation')
-    convert_list, copy_list, delete_list = diff_dirs(src_files, dest_files)
+    convert_list, copy_list, delete_list = diff_dirs(
+        src_files, dest_files, src_path, dest_path
+    )
     # Logging diff results
     logging.info(f"Ended directories diff creation")
     logging.info(f"{len(convert_list)} files to convert")
@@ -315,12 +323,12 @@ def synchronize(
 
     if convert_list:
         logging.info("Start conversion proccess")
-        converter(convert_list, cores)
+        converter(convert_list, cores, src_path, dest_path)
         logging.info("Ended conversion proccess")
 
     if copy_list:
         logging.info("Start file copy")
-        copier(copy_list)
+        copier(copy_list, src_path, dest_path)
         logging.info("Ended file copy")
 
     # Delete-after

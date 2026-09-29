@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "MusicSync"
-version = "1.5.0"
+version = "1.6.0"
 description = "A music directory backup syncer and flac to mp3 converter"
 readme = {file = "README.md", content-type = "text/markdown"}
 license = {file = "LICENSE"}
@@ -17,7 +17,7 @@ maintainers = [
   {name = "Alejandro Roldán", email = "alej_roldan@disr.it"}
 ]
 
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
 	"mutagen >= 1.47.0",
 	"scandirRecursive @ git+https://github.com/Alejandro-Roldan/scandirRecursive.git"
